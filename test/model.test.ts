@@ -231,3 +231,19 @@ describe('config auth=apikey', () => {
     expect(runCli(['config', 'auth=subscription'], h).code).toBe(0)
   })
 })
+
+describe('status and config help wording', () => {
+  test('status prints "last quip: N tokens, $X" from the newest react call', () => {
+    const { h, bin } = setup()
+    runCli(['react', 'error'], h, { env: { BUDDY_CLAUDE_BIN: bin } })
+    expect(stripAnsi(runCli(['status'], h).stdout)).toContain('last quip: 740 tokens, $0.0012')
+  })
+
+  test('config --help lists sprite, auth and config_dir and exits 0', () => {
+    const h = makeHome()
+    const r = runCli(['config', '--help'], h)
+    expect(r.code).toBe(0)
+    for (const s of ['sprite=compact|full', 'auth=subscription|apikey', 'config_dir=<path>', '--bare', 'CLAUDE_CONFIG_DIR'])
+      expect(r.stdout).toContain(s)
+  })
+})

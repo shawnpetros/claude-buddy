@@ -1242,6 +1242,15 @@ function cmdStatus(): void {
     lines.push(`last call: ${last.purpose ?? '?'}, ${input} in / ${tokens('output_tokens')} out tokens, ${cost(last.total_cost_usd)}`)
     lines.push(`logged total: ${cost(total)} over ${calls.length} call${calls.length === 1 ? '' : 's'}`)
   }
+  const lastQuip = [...calls].reverse().find(e => typeof e.purpose === 'string' && e.purpose.startsWith('react:'))
+  if (lastQuip) {
+    const u = isObject(lastQuip.usage) ? lastQuip.usage : {}
+    const n = (k: string) => (typeof u[k] === 'number' ? (u[k] as number) : 0)
+    // Context the model saw: fresh input plus cache writes and reads.
+    const ctx = n('input_tokens') + n('cache_creation_input_tokens') + n('cache_read_input_tokens')
+    const usd = typeof lastQuip.total_cost_usd === 'number' ? lastQuip.total_cost_usd : 0
+    lines.push(`last quip: ${ctx} tokens, $${usd.toFixed(4)}`)
+  }
   const cfg = readConfig()
   lines.push(`auth: ${cfg.auth}${cfg.auth === 'apikey' ? ' (--bare, no subscription usage)' : ''}`)
   lines.push(`config dir: ${cfg.config_dir || 'default'}`)
@@ -1271,10 +1280,27 @@ function cmdMute(muted: boolean): void {
   process.stdout.write(muted ? `${name} goes quiet.\n` : `${name} is back.\n`)
 }
 
+const CONFIG_HELP = `usage: buddy config [key=value]
+
+  sprite=compact|full       one-line status (default) or the five-row sprite with a bubble
+  auth=subscription|apikey  subscription (default): claude -p --safe-mode on your login.
+                            apikey: claude -p --bare with BUDDY_ANTHROPIC_API_KEY or
+                            ANTHROPIC_API_KEY from the environment. Quips never touch
+                            subscription usage; with no key set, quips are skipped and logged.
+  config_dir=<path>         run every model call with CLAUDE_CONFIG_DIR=<path>, for a lean
+                            second config dir. Empty value resets to default.
+
+With no argument, prints the current settings.
+`
+
 function cmdConfig(pair: string | undefined): number {
   const cfg = readConfig()
   if (!pair) {
     process.stdout.write(JSON.stringify(cfg, null, 2) + '\n')
+    return 0
+  }
+  if (pair === '--help' || pair === '-h' || pair === 'help') {
+    process.stdout.write(CONFIG_HELP)
     return 0
   }
   const known = 'sprite=compact|full, auth=subscription|apikey, config_dir=<path> (empty resets)'
