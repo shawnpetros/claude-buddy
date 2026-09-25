@@ -258,7 +258,7 @@ describe('buddy react (CLI)', () => {
     writeFileSync(join(proj, 'package.json'), JSON.stringify({ name: 'demo-proj' }))
     runCli(['react', 'error', '--transcript', transcript, '--cwd', proj], h, { env: { BUDDY_CLAUDE_BIN: bin } })
     const argv = readFileSync(h.marker, 'utf8')
-    for (const flag of ['-p', '--safe-mode', '--model', 'sonnet', '--output-format', 'text', '--no-session-persistence'])
+    for (const flag of ['-p', '--safe-mode', '--model', 'sonnet', '--output-format', 'json', '--no-session-persistence'])
       expect(argv.split('\n')).toContain(flag)
     const stdin = readFileSync(h.marker + '.stdin', 'utf8')
     expect(stdin).toContain('demo-proj')

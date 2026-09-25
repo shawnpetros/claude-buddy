@@ -96,13 +96,29 @@ export function logFailure(event: string, extra: Record<string, unknown> = {}): 
   }
 }
 
-function lastFailure(): Record<string, unknown> | null {
+function readLog(): Array<Record<string, unknown>> {
   try {
-    const lines = readFileSync(paths().log, 'utf8').split('\n').filter(Boolean)
-    return lines.length ? JSON.parse(lines[lines.length - 1]!) : null
+    return readFileSync(paths().log, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map(l => {
+        try {
+          const e: unknown = JSON.parse(l)
+          return isObject(e) ? e : null
+        } catch {
+          return null
+        }
+      })
+      .filter((e): e is Record<string, unknown> => e !== null)
   } catch {
-    return null
+    return []
   }
+}
+
+/** `model_call` lines are cost telemetry, not failures. */
+function lastFailure(log = readLog()): Record<string, unknown> | null {
+  for (let i = log.length - 1; i >= 0; i--) if (log[i]!.event !== 'model_call') return log[i]!
+  return null
 }
 
 // ───────────────────────────── json files ─────────────────────────────
@@ -149,8 +165,11 @@ function patchState(patch: Partial<State>): State {
 
 export function readConfig(): Config {
   const raw = readJson(paths().config)
-  const cfg: Config = { sprite: 'compact' }
-  if (isObject(raw) && (raw.sprite === 'compact' || raw.sprite === 'full')) cfg.sprite = raw.sprite
+  const cfg: Config = { sprite: 'compact', auth: 'subscription', config_dir: '' }
+  if (!isObject(raw)) return cfg
+  if (raw.sprite === 'compact' || raw.sprite === 'full') cfg.sprite = raw.sprite
+  if (raw.auth === 'subscription' || raw.auth === 'apikey') cfg.auth = raw.auth
+  if (typeof raw.config_dir === 'string') cfg.config_dir = raw.config_dir
   return cfg
 }
 
@@ -460,7 +479,7 @@ function fitRight(segs: Seg[], columns: number): string {
 export type RenderInput = {
   companion: Companion
   state: State
-  config: Config
+  config: Pick<Config, 'sprite'>
   now: number
   columns: number
 }
@@ -787,23 +806,51 @@ export function buildQuipPrompt(q: QuipInput): { system: string; user: string } 
 
 // ───────────────────────────── model calls ─────────────────────────────
 
-type ModelResult = { ok: true; stdout: string } | { ok: false; event: string; error: string }
+type ModelResult = { ok: true; text: string; raw: string } | { ok: false; event: string; error: string }
 
 /**
  * `claude -p` in safe mode: no plugins, hooks, MCP servers, skills or CLAUDE.md. That keeps the
  * call near 500 input tokens instead of the ~300k a fully loaded session sends, and it stops the
  * child from firing this plugin's own Stop hook. CLAUDE_BUDDY_CHILD is the belt to those braces.
  */
-async function callClaude(system: string, input: string, extra: string[], timeoutMs: number): Promise<ModelResult> {
+async function callClaude(
+  purpose: string,
+  system: string,
+  input: string,
+  extra: string[],
+  timeoutMs: number,
+): Promise<ModelResult> {
   const bin = process.env.BUDDY_CLAUDE_BIN || 'claude'
+  const cfg = readConfig()
+  const env: Record<string, string | undefined> = { ...process.env, CLAUDE_BUDDY_CHILD: '1' }
+  delete env.BUDDY_ANTHROPIC_API_KEY
+  if (cfg.config_dir) env.CLAUDE_CONFIG_DIR = cfg.config_dir
+
+  // --bare refuses OAuth (it fails with api_error unless ANTHROPIC_API_KEY is set), so it is only
+  // used when the user opts into an API key. It is the zero-subscription-usage option.
+  let authFlag = '--safe-mode'
+  if (cfg.auth === 'apikey') {
+    const key = process.env.BUDDY_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY
+    if (!key)
+      return { ok: false, event: 'apikey_missing', error: 'auth=apikey but neither BUDDY_ANTHROPIC_API_KEY nor ANTHROPIC_API_KEY is set' }
+    env.ANTHROPIC_API_KEY = key
+    authFlag = '--bare'
+  }
+
+  // Measured on the operator's machine: about 740 context tokens with this set, against ~307k
+  // for a plain `claude -p`. Dropping any one of these flags multiplies the cost of every quip.
   const args = [
     '-p',
-    '--safe-mode',
     '--model',
     process.env.BUDDY_MODEL || 'sonnet',
+    '--output-format',
+    'json',
     '--no-session-persistence',
+    authFlag,
     '--strict-mcp-config',
     '--disable-slash-commands',
+    '--setting-sources',
+    '',
     '--system-prompt',
     system,
     ...extra,
@@ -815,7 +862,7 @@ async function callClaude(system: string, input: string, extra: string[], timeou
     mkdirSync(paths().cfg, { recursive: true })
     proc = Bun.spawn([bin, ...args], {
       cwd: paths().cfg,
-      env: { ...process.env, CLAUDE_BUDDY_CHILD: '1' },
+      env,
       stdin: new TextEncoder().encode(input),
       stdout: 'pipe',
       stderr: 'pipe',
@@ -843,8 +890,34 @@ async function callClaude(system: string, input: string, extra: string[], timeou
       return { ok: false, event: 'model_timeout', error: `no answer within ${timeoutMs}ms` }
     }
     const [stdout, stderr, code] = won
-    if (code !== 0) return { ok: false, event: 'model_failed', error: `exit ${code}: ${(stderr || stdout).slice(-300)}` }
-    return { ok: true, stdout }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(stdout)
+    } catch {
+      parsed = undefined
+    }
+    const json = isObject(parsed) ? parsed : undefined
+    const text = json ? (typeof json.result === 'string' ? json.result : '') : stdout
+    if (json)
+      logFailure('model_call', {
+        purpose,
+        ok: code === 0 && json.is_error !== true,
+        usage: isObject(json.usage)
+          ? Object.fromEntries(
+              ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].map(k => [
+                k,
+                isObject(json.usage) && typeof json.usage[k] === 'number' ? json.usage[k] : 0,
+              ]),
+            )
+          : null,
+        total_cost_usd: typeof json.total_cost_usd === 'number' ? json.total_cost_usd : null,
+        duration_ms: typeof json.duration_ms === 'number' ? json.duration_ms : null,
+      })
+    const detail = (text || stderr || stdout).slice(-300)
+    if (/Failed to authenticate/i.test(`${text}\n${stderr}\n${stdout}`))
+      return { ok: false, event: 'auth_failed', error: detail }
+    if (code !== 0 || json?.is_error === true) return { ok: false, event: 'model_failed', error: `exit ${code}: ${detail}` }
+    return { ok: true, text, raw: stdout }
   } catch (e) {
     return { ok: false, event: 'model_failed', error: String(e) }
   } finally {
@@ -904,14 +977,14 @@ async function cmdReact(reasonArg: string | undefined, opts: ReactOpts): Promise
     prompt: opts.prompt,
   })
 
-  const res = await callClaude(system, user, ['--output-format', 'text'], timeoutMs(12_000))
+  const res = await callClaude(`react:${reason}`, system, user, [], timeoutMs(12_000))
   if (!res.ok) {
     logFailure(res.event, { reason, error: res.error })
     return
   }
-  const quip = sanitizeQuip(res.stdout)
+  const quip = sanitizeQuip(res.text)
   if (!quip) {
-    logFailure('empty_quip', { reason, raw: res.stdout.slice(0, 200) })
+    logFailure('empty_quip', { reason, raw: res.raw.slice(0, 200) })
     return
   }
   const latest = readState()
@@ -1110,16 +1183,11 @@ async function cmdHatch(force: boolean): Promise<void> {
     .join('\n')
 
   process.stdout.write('An egg wobbles...\n')
-  const res = await callClaude(
-    HATCH_SYSTEM,
-    user,
-    ['--output-format', 'json', '--json-schema', JSON.stringify(SOUL_SCHEMA)],
-    timeoutMs(60_000),
-  )
+  const res = await callClaude('hatch', HATCH_SYSTEM, user, ['--json-schema', JSON.stringify(SOUL_SCHEMA)], timeoutMs(60_000))
   let soul: { name: string; personality: string } | null = null
   if (res.ok) {
-    soul = parseSoulResponse(res.stdout)
-    if (!soul) logFailure('hatch_parse_failed', { raw: res.stdout.slice(0, 300) })
+    soul = parseSoulResponse(res.raw)
+    if (!soul) logFailure('hatch_parse_failed', { raw: res.raw.slice(0, 300) })
   } else {
     logFailure(res.event === 'model_timeout' ? 'hatch_timeout' : 'hatch_failed', { error: res.error })
   }
@@ -1162,8 +1230,27 @@ function cmdStatus(): void {
   lines.push('')
   if (state.muted) lines.push(`${c.name} is muted. /buddy:buddy on to bring it back.`)
   if (state.reaction) lines.push(`last said: "${state.reaction}"${state.reason ? ` (${state.reason})` : ''}`)
-  const fail = lastFailure()
+  const log = readLog()
+  const calls = log.filter(e => e.event === 'model_call')
+  const last = calls[calls.length - 1]
+  if (last) {
+    const usage = isObject(last.usage) ? last.usage : {}
+    const tokens = (k: string) => (typeof usage[k] === 'number' ? (usage[k] as number) : 0)
+    const input = tokens('input_tokens') + tokens('cache_read_input_tokens') + tokens('cache_creation_input_tokens')
+    const cost = (x: unknown) => `$${(typeof x === 'number' ? x : 0).toFixed(4)}`
+    const total = calls.reduce((a, e) => a + (typeof e.total_cost_usd === 'number' ? e.total_cost_usd : 0), 0)
+    lines.push(`last call: ${last.purpose ?? '?'}, ${input} in / ${tokens('output_tokens')} out tokens, ${cost(last.total_cost_usd)}`)
+    lines.push(`logged total: ${cost(total)} over ${calls.length} call${calls.length === 1 ? '' : 's'}`)
+  }
+  const cfg = readConfig()
+  lines.push(`auth: ${cfg.auth}${cfg.auth === 'apikey' ? ' (--bare, no subscription usage)' : ''}`)
+  lines.push(`config dir: ${cfg.config_dir || 'default'}`)
+  const fail = lastFailure(log)
   if (fail) lines.push(`last failure: ${fail.ts ?? '?'} ${fail.event ?? '?'}${fail.error ? `: ${fail.error}` : ''}`)
+  // The newest auth-relevant event decides: a later successful call clears the hint.
+  const authEvent = [...log].reverse().find(e => e.event === 'auth_failed' || (e.event === 'model_call' && e.ok === true))
+  if (authEvent?.event === 'auth_failed')
+    lines.push(`run: ${cfg.config_dir ? `CLAUDE_CONFIG_DIR=${cfg.config_dir} ` : ''}claude login`)
   process.stdout.write(lines.join('\n') + '\n')
 }
 
@@ -1190,19 +1277,35 @@ function cmdConfig(pair: string | undefined): number {
     process.stdout.write(JSON.stringify(cfg, null, 2) + '\n')
     return 0
   }
-  const m = pair.match(/^([a-z]+)=(.*)$/)
+  const known = 'sprite=compact|full, auth=subscription|apikey, config_dir=<path> (empty resets)'
+  const m = pair.match(/^([a-z_]+)=(.*)$/)
   if (!m) {
-    process.stderr.write('usage: buddy config key=value (keys: sprite=compact|full)\n')
+    process.stderr.write(`usage: buddy config key=value (${known})\n`)
     return 2
   }
-  const [, key, value] = m
-  if (key === 'sprite' && (value === 'compact' || value === 'full')) {
-    cfg.sprite = value
+  const key = m[1]!
+  const value = m[2]!.trim()
+  const save = (shown: string) => {
     writeAtomic(paths().config, JSON.stringify(cfg, null, 2) + '\n')
-    process.stdout.write(`sprite = ${value}\n`)
+    process.stdout.write(`${key} = ${shown}\n`)
     return 0
   }
-  process.stderr.write(`unknown setting ${pair}. Known: sprite=compact|full\n`)
+  if (key === 'sprite' && (value === 'compact' || value === 'full')) {
+    cfg.sprite = value
+    return save(value)
+  }
+  if (key === 'auth' && (value === 'subscription' || value === 'apikey')) {
+    cfg.auth = value
+    if (value === 'apikey' && !process.env.BUDDY_ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY)
+      process.stdout.write('note: set BUDDY_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY) where Claude Code runs, or every call will be skipped.\n')
+    return save(value)
+  }
+  if (key === 'config_dir') {
+    const expanded = value.replace(/^~(?=$|\/)/, homeDir())
+    cfg.config_dir = expanded ? resolve(expanded) : ''
+    return save(cfg.config_dir || 'default')
+  }
+  process.stderr.write(`unknown setting ${pair}. Known: ${known}\n`)
   return 2
 }
 
@@ -1576,6 +1679,11 @@ const USAGE = `usage: buddy <command>
   mute | unmute         silence it, or bring it back
   status                show its card, last quip and last failure
   config key=value      sprite=compact|full
+                        auth=subscription   claude -p --safe-mode on your login (default)
+                        auth=apikey         claude -p --bare with BUDDY_ANTHROPIC_API_KEY or
+                                            ANTHROPIC_API_KEY: zero subscription usage
+                        config_dir=<path>   run model calls with CLAUDE_CONFIG_DIR=<path>
+                                            (a lean second config dir); empty resets
   install [--yes]       wire up the status line and plugin (shows a diff first)
   uninstall [--yes]     undo install
 `

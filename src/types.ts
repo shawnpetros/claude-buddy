@@ -106,4 +106,8 @@ export type State = {
 
 export type Config = {
   sprite: 'compact' | 'full'
+  /** subscription: `claude -p --safe-mode` on your login. apikey: `--bare` with an API key, no subscription usage. */
+  auth: 'subscription' | 'apikey'
+  /** When set, model calls run with CLAUDE_CONFIG_DIR=<path>. Empty means the default config. */
+  config_dir: string
 }

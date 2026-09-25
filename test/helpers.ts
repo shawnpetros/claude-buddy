@@ -33,10 +33,22 @@ export function readState(h: Home): Record<string, unknown> {
   return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : {}
 }
 
-export function logLines(h: Home): string[] {
+function allLogLines(h: Home): string[] {
   const p = join(h.cfg, 'buddy.log')
   if (!existsSync(p)) return []
   return readFileSync(p, 'utf8').split('\n').filter(Boolean)
+}
+
+/** Failure lines only. Successful model calls also log a `model_call` cost line; those are excluded. */
+export function logLines(h: Home): string[] {
+  return allLogLines(h).filter(l => JSON.parse(l).event !== 'model_call')
+}
+
+/** The per-call cost/usage lines. */
+export function callLines(h: Home): Array<Record<string, unknown>> {
+  return allLogLines(h)
+    .map(l => JSON.parse(l))
+    .filter(e => e.event === 'model_call')
 }
 
 /**
@@ -50,6 +62,7 @@ export function stubClaude(h: Home, output: string, sleepSeconds = 0, exitCode =
     '#!/bin/sh',
     `printf '%s\\n' "$@" > "${h.marker}"`,
     `cat > "${h.marker}.stdin"`,
+    `printf '%s|%s\\n' "$ANTHROPIC_API_KEY" "$CLAUDE_CONFIG_DIR" > "${h.marker}.env"`,
     sleepSeconds > 0 ? `sleep ${sleepSeconds}` : '',
     `cat <<'__OUT__'`,
     output,
