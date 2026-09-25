@@ -266,6 +266,9 @@ describe('buddy react (CLI)', () => {
     expect(stdin).toContain('please fix the flaky test')
   })
 
+  // A real session's first prompt can arrive before Claude has written the transcript file
+  // (seen live: UserPromptSubmit fired, transcript_path did not exist yet). So a missing
+  // transcript is logged, and the quip still goes ahead on the context summary alone.
   test('a transcript_path that does not exist logs one line and exits 0', () => {
     const { h, bin } = setup()
     const r = runCli(['react', 'turn', '--transcript', join(h.home, 'nope.jsonl')], h, { env: { BUDDY_CLAUDE_BIN: bin } })
@@ -275,7 +278,7 @@ describe('buddy react (CLI)', () => {
     const entry = JSON.parse(lines[0]!)
     expect(entry.event).toBe('transcript_missing')
     expect(typeof entry.ts).toBe('string')
-    expect(existsSync(h.marker)).toBe(false)
+    expect(readState(h).reaction).toBe('the stub has spoken')
   })
 
   test('a failing model call logs one line, exits 0, keeps the old reaction', () => {
