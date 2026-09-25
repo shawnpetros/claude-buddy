@@ -58,6 +58,9 @@
   .user-line { color: #8bd3ff; }
   .assistant-line { color: #cfcfcf; }
   .fail-line { color: #ff6b6b; }
+  .tool-line { color: #8a8a8a; }
+  .tool-detail { color: #5f5f5f; }
+  .summary-line { color: #d4d4d4; margin-top: 6px; }
   .spacer { flex: 1; }
   .promptbox {
     border: 1px solid #3a3a3a;
@@ -103,6 +106,13 @@
 <span class="user-line">&gt; fix the failing test in auth.test.ts</span>
 <span class="assistant-line">Running bun test...</span>
 <span class="fail-line">1 failed | 42 passed (auth.test.ts:18)</span>
+<span class="tool-line">● Read(src/auth.ts)</span>
+<span class="tool-detail">  ⎿ 42 lines</span>
+<span class="tool-line">● Edit(src/auth.ts)</span>
+<span class="tool-detail">  ⎿ Updated 1 line</span>
+<span class="tool-line">● Bash(bun test)</span>
+<span class="tool-detail">  ⎿ 43 passed</span>
+<span class="summary-line">Fixed the token expiry check and reran the suite.</span>
       </div>
       <div class="spacer"></div>
       <div class="promptbox">&gt; <span class="cursor"></span></div>
