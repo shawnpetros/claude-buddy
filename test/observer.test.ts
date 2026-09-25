@@ -106,7 +106,7 @@ describe('sanitizeQuip', () => {
 })
 
 function transcriptFixture() {
-  const lines: object[] = [
+  const lines: Array<object | string> = [
     { type: 'user', isMeta: true, message: { role: 'user', content: 'meta noise' } },
     { type: 'user', message: { role: 'user', content: 'please fix the flaky test' } },
     {
