@@ -14,7 +14,7 @@ piece in the PR if it's not obvious.
 
 For anything touching the bones roll, the render width math, or the hook throttling, write
 the failing test before the fix. Those are exactly the places where a "looks right" change
-quietly breaks determinism or blows the status line width — see `SPEC.md` §6 and §7 for the
+quietly breaks determinism or blows the status line width. See `SPEC.md` §6 and §7 for the
 invariants and the adversarial test list this project is built against.
 
 Small, reviewable PRs. If the diff is hard to review in one sitting, split it.

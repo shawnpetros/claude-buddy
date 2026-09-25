@@ -35,6 +35,10 @@ bun run build
 `buddy install` writes a starship custom module and sets `statusLine.refreshInterval` to 1
 in your Claude Code settings. It shows you the diff before touching anything.
 
+This repo is public, but the plugin isn't in any marketplace yet, so it only loads from a
+local path: `claude --plugin-dir .` from the repo root. Once it's listed somewhere, that
+step goes away.
+
 Then load the plugin (`claude --plugin-dir .`, or wherever your Claude Code build reads
 local plugins from) and run:
 
@@ -85,9 +89,9 @@ shiny.
 - `sprite=compact` (default, one row) or `sprite=full` (the original five-row layout, costs
   four extra lines under the input)
 - `muted=true/false`
-- `model=<alias>` — defaults to the `sonnet` alias so it tracks the current Sonnet without a
+- `model=<alias>`, defaults to the `sonnet` alias so it tracks the current Sonnet without a
   pinned version
-- `throttle=<seconds>` — default 30, minimum time between unprompted quips
+- `throttle=<seconds>`, default 30, minimum time between unprompted quips
 
 ## Costs and privacy
 
@@ -104,7 +108,7 @@ soul and mood lives only in `~/.config/claude-buddy/`.
 
 ## Status line requirements
 
-You need a `statusLine` command that can shell out to `buddy render` — `cship` plus starship
+You need a `statusLine` command that can shell out to `buddy render`. `cship` plus starship
 is what this was built against, but any status line integration that runs an arbitrary
 command and refreshes at least once a second works. Without a fast refresh, the bubble timing
 and idle animation won't track wall clock correctly.
