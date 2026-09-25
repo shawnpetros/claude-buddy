@@ -1,5 +1,4 @@
-<!-- internal -->
-# claude-buddy — personal plugin spec
+# claude-buddy, personal plugin spec
 
 Status: draft, 2026-09-24. Personal tooling, large-scope rules apply, not client rules.
 Owner of invariants, trade-off calls, adversarial tests, review: Shawn.
@@ -20,11 +19,9 @@ Not a goal: byte-for-byte parity, fullscreen bubble overlay, telemetry.
 
 ## 1. What the original did (source of truth)
 
-Read before building. Leaked TS source: `~/projects-archive/claude-code-nirholas/src/buddy/`
-(`types.ts`, `companion.ts`, `sprites.ts`, `CompanionSprite.tsx`, `prompt.ts`).
-Minified 2.1.94 bundle with the missing `commands/buddy` logic lives in this job's tmp dir
-(`~/.claude/jobs/a5940077/tmp/v2.1.94/package/cli.js`; search `buddy_react`, `buddy_companion`).
-Copy it somewhere durable before the job is deleted.
+Behaviour was reverse-engineered from the April 2026 builds (2.1.89 through 2.1.94): the
+client-side companion module, sprite component and prompt attachment, plus the observer logic
+recovered from the minified bundle. None of that material is checked in or used as a build input.
 
 Facts that shape this spec:
 
@@ -42,7 +39,7 @@ Facts that shape this spec:
 
 Licence note: the sprite art and prompts are Anthropic's. This plugin is personal, never
 published. Species table and prompts get re-typed by hand from the source, not copied as
-files, so nothing under `projects-archive` is a build input.
+files, so no reference material is a build input.
 
 ## 2. Architecture
 
@@ -215,7 +212,7 @@ a pet, and the reason `refreshInterval` is required.
 Fullscreen floating bubble, footer keyboard navigation to the sprite, telemetry, species
 renames, the April-only date gate, publishing the plugin anywhere.
 
-## 10. Decisions taken 2026-09-24 (sane defaults, Shawn away)
+## 10. Decisions taken 2026-09-24 (sane defaults)
 
 - Language: TypeScript on bun, `src/buddy.ts` compiled with `bun build --compile` to `bin/buddy`, plus a `bun run` dev path.
 - Default sprite mode: `compact` (one row). `full` available via config.
@@ -229,7 +226,6 @@ renames, the April-only date gate, publishing the plugin anywhere.
 - **Art and prompts are original.** Same 18 species, same rarity tiers, hats, eyes, stat names, but every
   sprite is drawn fresh for this repo and every prompt is written fresh. Nothing from Anthropic's leaked
   source is copied, so the repo can be public. The leaked source is reference for behaviour only.
-- GitHub: private repo `shawnpetros/claude-buddy` created by the job, pushed on branch `initial`; Shawn
-  flips visibility and merges after reading.
-- Marketing: README with banner (OpenAI image API via Codex-era key), a rendered terminal screenshot,
+- GitHub: public repo `shawnpetros/claude-buddy`.
+- Marketing: README with banner (OpenAI image API), a rendered terminal screenshot,
   a 20-second asciinema-style GIF if cheap, badges, install one-liner.
