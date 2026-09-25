@@ -1,0 +1,10 @@
+{
+  "name": "claude-buddy",
+  "version": "0.1.0",
+  "description": "A small terminal companion that lives in your Claude Code status line and occasionally has opinions.",
+  "author": {
+    "name": "Shawn Petros"
+  },
+  "license": "MIT",
+  "keywords": ["companion", "statusline", "buddy", "pet"]
+}
