@@ -1,1 +1,5 @@
 reference-cli-2.1.94.min.js
+node_modules/
+bin/buddy
+*.log
+.DS_Store

@@ -1,0 +1,22 @@
+{
+  "name": "claude-buddy",
+  "version": "0.1.0",
+  "description": "A small terminal companion for Claude Code that lives in your status line.",
+  "license": "MIT",
+  "author": "Shawn Petros",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "buddy": "bin/buddy"
+  },
+  "scripts": {
+    "test": "bun test",
+    "build": "bun build --compile --minify src/buddy.ts --outfile bin/buddy",
+    "dev": "bun run src/buddy.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14",
+    "typescript": "^5.9.0"
+  }
+}
