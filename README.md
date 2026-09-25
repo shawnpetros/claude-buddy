@@ -92,13 +92,23 @@ shiny.
 - `model=<alias>`, defaults to the `sonnet` alias so it tracks the current Sonnet without a
   pinned version
 - `throttle=<seconds>`, default 30, minimum time between unprompted quips
+- `auth=apikey`, switches the quip child from your subscription to `--bare` plus
+  `ANTHROPIC_API_KEY`, zero subscription usage, you pay per call instead
+- `config_dir=<path>`, runs the quip child under its own `CLAUDE_CONFIG_DIR`, isolated from
+  your main session's config
 
 ## Costs and privacy
 
-Quips and hatch both call `claude -p`, which runs against your Claude subscription, not a
-separate API key. Worst case is about two calls a minute if you're moving fast and hitting
-error/test-fail triggers back to back; otherwise it's closer to one every 30 seconds while
-you're actively working.
+Quips and hatch both call `claude -p`, which runs against your Claude subscription by default,
+not a separate API key. Worst case is about two calls a minute if you're moving fast and
+hitting error/test-fail triggers back to back; otherwise it's closer to one every 30 seconds
+while you're actively working.
+
+The quip child is stripped down, not a second copy of your session: `--safe-mode --tools ""
+--strict-mcp-config --disable-slash-commands --setting-sources ""`. Measured, that runs about
+740 context tokens per call, $0.0015 to $0.003 nominal if you priced it as API usage. A plain
+`claude -p` call on a normally loaded setup, tools and settings sources included, ran about
+307k tokens for comparison. That gap is the whole reason for the stripped flag set.
 
 What leaves your machine: the last dozen turns of transcript (truncated), the tail of tool
 output, and some project context (branch, recent commits, files touched). It goes to
@@ -118,6 +128,23 @@ and idle animation won't track wall clock correctly.
 Claude Code plugins can't render an Ink UI panel; there's no hook for "draw a persistent
 widget next to the prompt." The status line is the only seam a plugin actually has, so that's
 what this uses instead of trying to patch the CLI itself.
+
+## Related projects
+
+A few other people rebuilt this independently:
+
+- [ramarivera/coding-buddy](https://github.com/ramarivera/coding-buddy), an MCP server. The
+  main model calls a tool to react mid-turn, with canned lines as a fallback. Keeps the
+  original species and stats.
+- [cpaczek/any-buddy](https://github.com/cpaczek/any-buddy), which patches the Claude Code
+  binary directly.
+- [ithiria894/claude-code-buddy-reroll](https://github.com/ithiria894/claude-code-buddy-reroll),
+  which brute-forces a rarity.
+
+This one keeps the pet out of your main session entirely. It has its own brain, a separate
+headless `claude -p` child running with about 740 tokens of context, so it never adds to your
+main session's context window or tool list, and it renders through the status line instead of
+tool output. The art and prompts here are also original rather than the leaked original set.
 
 ## Credits
 
